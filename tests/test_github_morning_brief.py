@@ -2,6 +2,7 @@ import unittest
 
 from src.github_morning_brief import (
     TrendingParser,
+    anthropic_headers,
     chunk_text,
     default_headers,
     extract_response_text,
@@ -44,6 +45,11 @@ class GithubMorningBriefTest(unittest.TestCase):
     def test_default_headers_do_not_attach_github_token(self):
         headers = default_headers()
         self.assertNotIn("Authorization", headers)
+
+    def test_anthropic_headers_tries_auth_token_and_api_key_styles(self):
+        headers = anthropic_headers(auth_token="secret", api_key="")
+        self.assertEqual(headers[0]["Authorization"], "Bearer secret")
+        self.assertEqual(headers[1]["x-api-key"], "secret")
 
     def test_format_signal_localizes_common_signals(self):
         signal = "GitHub Trending daily; 12 stars today"

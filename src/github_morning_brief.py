@@ -390,34 +390,48 @@ def generate_with_anthropic(signals: list[RepoSignal], model: str) -> str | None
     if not (auth_token or api_key) or not base_url:
         return None
 
-    headers = {
-        "anthropic-version": "2023-06-01",
-        "Accept": "application/json",
-    }
-    if auth_token:
-        headers["Authorization"] = f"Bearer {auth_token}"
-    else:
-        headers["x-api-key"] = api_key
-
     payload = {
         "model": model,
         "max_tokens": 3500,
         "system": "你是一个给工程师和产品型创业者写晨间开源情报的研究助理。",
         "messages": [{"role": "user", "content": build_generation_prompt(signals)}],
     }
-    try:
-        response = post_json(
-            f"{base_url}/v1/messages",
-            payload,
-            headers=headers,
-            timeout=120,
-        )
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
-        print(f"warning: Anthropic-compatible generation failed: {exc}", file=sys.stderr)
+
+    response = None
+    last_error: BaseException | None = None
+    for headers in anthropic_headers(auth_token=auth_token, api_key=api_key):
+        try:
+            response = post_json(
+                f"{base_url}/v1/messages",
+                payload,
+                headers=headers,
+                timeout=120,
+            )
+            break
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+            last_error = exc
+            continue
+
+    if response is None:
+        print(f"warning: Anthropic-compatible generation failed: {last_error}", file=sys.stderr)
         return None
 
     text = extract_response_text(response)
     return text.strip() if text else None
+
+
+def anthropic_headers(auth_token: str, api_key: str) -> list[dict[str, str]]:
+    base = {
+        "anthropic-version": "2023-06-01",
+        "Accept": "application/json",
+    }
+    candidates: list[dict[str, str]] = []
+    if auth_token:
+        candidates.append({**base, "Authorization": f"Bearer {auth_token}"})
+        candidates.append({**base, "x-api-key": auth_token})
+    if api_key and api_key != auth_token:
+        candidates.append({**base, "x-api-key": api_key})
+    return candidates
 
 
 def normalize_base_url(value: str) -> str:
