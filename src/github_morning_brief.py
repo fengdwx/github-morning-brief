@@ -207,9 +207,15 @@ def post_json(url: str, payload: dict[str, Any], headers: dict[str, str] | None 
 
 def default_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
     headers = {
-        "Accept": "application/vnd.github+json",
         "User-Agent": "github-morning-brief/1.0",
     }
+    if extra:
+        headers.update(extra)
+    return headers
+
+
+def github_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
+    headers = default_headers({"Accept": "application/vnd.github+json"})
     token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -270,7 +276,7 @@ def search_repositories(per_query: int) -> list[RepoSignal]:
         )
         url = f"{GITHUB_API}/search/repositories?{params}"
         try:
-            payload = http_json(url)
+            payload = http_json(url, headers=github_headers())
         except urllib.error.HTTPError as exc:
             print(f"warning: GitHub search failed for {query!r}: {exc}", file=sys.stderr)
             continue
@@ -366,6 +372,7 @@ def build_generation_prompt(signals: list[RepoSignal]) -> str:
 要求：
 - 筛选 5-8 个项目，不要泛泛而谈。
 - 每个项目包含：项目名和链接、领域、趋势信号、一句话介绍、为什么值得关注、适合我的可能用途。
+- 除项目名、链接、代码库名、模型名、编程语言名和必要专有名词外，所有自然语言都必须使用中文；不要直接复制英文 description，请翻译、归纳或解释成中文。
 - 优先关注 AI/LLM、Agent、开发者工具、自动化、生产力、开源基础设施、工程实践、产品设计。
 - 固定观察一条冷门方向：历史预测/计算历史/社会复杂系统/事件预测，包括 cliodynamics、computational history、quantitative history、structural-demographic theory、geopolitical forecasting、prediction markets、temporal reasoning、历史数据库和历史事件模拟。这个方向不需要硬凑，但发现相关项目要单独提示。
 - 末尾给 1-3 条“今天可以深入看”的推荐，并说明理由。
@@ -377,10 +384,20 @@ def build_generation_prompt(signals: list[RepoSignal]) -> str:
 
 
 def generate_with_anthropic(signals: list[RepoSignal], model: str) -> str | None:
-    api_key = os.getenv("ANTHROPIC_AUTH_TOKEN", "").strip()
+    auth_token = os.getenv("ANTHROPIC_AUTH_TOKEN", "").strip()
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     base_url = normalize_base_url(os.getenv("ANTHROPIC_BASE_URL", ""))
-    if not api_key or not base_url:
+    if not (auth_token or api_key) or not base_url:
         return None
+
+    headers = {
+        "anthropic-version": "2023-06-01",
+        "Accept": "application/json",
+    }
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+    else:
+        headers["x-api-key"] = api_key
 
     payload = {
         "model": model,
@@ -392,12 +409,7 @@ def generate_with_anthropic(signals: list[RepoSignal], model: str) -> str | None
         response = post_json(
             f"{base_url}/v1/messages",
             payload,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "Accept": "application/json",
-            },
+            headers=headers,
             timeout=120,
         )
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
@@ -482,14 +494,17 @@ def build_fallback_brief(signals: list[RepoSignal]) -> str:
     today = dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).strftime("%Y-%m-%d")
     lines = [f"GitHub 晨间简报｜{today}", ""]
     for index, signal in enumerate(signals[:8], start=1):
-        stars = f"｜{signal.stars:,} stars" if signal.stars is not None else ""
+        stars = f"｜{signal.stars:,} 星标" if signal.stars is not None else ""
         language = f"｜{signal.language}" if signal.language else ""
+        area = infer_area(signal)
         lines.extend(
             [
                 f"{index}. {signal.full_name}",
                 signal.html_url,
-                f"信号：{signal.signal}{stars}{language}",
-                f"简介：{signal.description or '暂无描述'}",
+                f"领域：{area}",
+                f"信号：{format_signal(signal.signal)}{stars}{language}",
+                f"简介：这是一个偏 {area} 的项目，今天被算法筛到候选列表；建议点进仓库看 README、示例和最近提交质量。",
+                f"可能用途：{suggest_use(area)}",
                 "",
             ]
         )
@@ -502,6 +517,71 @@ def build_fallback_brief(signals: list[RepoSignal]) -> str:
         lines.append("冷门观察：历史预测/计算历史方向今天有可看项目，优先看上面相关条目。")
     lines.append("今天可以深入看：优先选择 Trending 且与你当前 AI/Agent/开发者工具兴趣重叠的项目。")
     return "\n".join(lines).strip()
+
+
+def infer_area(signal: RepoSignal) -> str:
+    text = " ".join([signal.full_name, signal.description, signal.language, signal.signal, " ".join(signal.topics)]).lower()
+    if any(keyword in text for keyword in ["cliodynamics", "history", "historical", "geopolitical", "prediction market", "temporal"]):
+        return "历史预测/计算历史"
+    if any(keyword in text for keyword in ["agent", "agents", "agentic"]):
+        return "AI Agent"
+    if any(keyword in text for keyword in ["llm", "model", "prompt", "rag"]):
+        return "AI/LLM"
+    if any(keyword in text for keyword in ["video", "render", "media"]):
+        return "生成式媒体工具"
+    if any(keyword in text for keyword in ["dev", "developer", "cli", "tool", "sdk"]):
+        return "开发者工具"
+    if any(keyword in text for keyword in ["automation", "workflow", "productivity"]):
+        return "自动化/生产力"
+    if any(keyword in text for keyword in ["infra", "database", "runtime", "server"]):
+        return "开源基础设施"
+    return "开源工具"
+
+
+def suggest_use(area: str) -> str:
+    suggestions = {
+        "历史预测/计算历史": "作为冷门观察方向，看看它的数据结构、模型假设和 benchmark 是否能迁移到事件预测或研究型 agent。",
+        "AI Agent": "观察它如何组织工具、记忆、任务流和评估方式，适合给自己的 agent 工作流找设计参考。",
+        "AI/LLM": "重点看模型调用、评估数据和工程封装，判断能否变成自己的开发辅助组件。",
+        "生成式媒体工具": "适合观察 agent 如何串联多步骤内容生产，也可以作为自动化素材生成流程的参考。",
+        "开发者工具": "可以看 CLI/API 设计、插件机制和本地工作流集成，判断是否能提高日常开发效率。",
+        "自动化/生产力": "适合拆解它的触发器、任务编排和通知方式，看看能否接入自己的日常自动化。",
+        "开源基础设施": "优先看部署复杂度、稳定性、协议边界和社区活跃度，判断是否值得长期关注。",
+    }
+    return suggestions.get(area, "先看 README、示例和最近 issue，判断它是不是短期热度还是有真实工程价值。")
+
+
+def format_signal(signal: str) -> str:
+    if signal.startswith("GitHub Trending daily"):
+        return signal.replace("GitHub Trending daily", "GitHub 今日趋势").replace("stars today", "今日新增星标")
+    if signal.startswith("GitHub search:"):
+        query = signal.removeprefix("GitHub search:").strip()
+        return f"GitHub 搜索命中：{format_query(query)}"
+    return signal
+
+
+def format_query(query: str) -> str:
+    translations = [
+        ("topic:llm", "LLM 主题"),
+        ("topic:ai-agent", "AI Agent 主题"),
+        ("agentic", "Agentic 关键词"),
+        ("developer-tools", "开发者工具"),
+        ("automation", "自动化"),
+        ("productivity", "生产力工具"),
+        ("infrastructure", "基础设施"),
+        ("temporal-reasoning", "时间推理"),
+        ("forecasting llm", "LLM 预测"),
+        ("cliodynamics", "历史动力学"),
+        ("computational-history", "计算历史"),
+        ("prediction-markets", "预测市场"),
+        ("historical event simulation", "历史事件模拟"),
+        ("stars:>", "星标数大于 "),
+        ("pushed:>", "近期更新晚于 "),
+    ]
+    result = query
+    for source, target in translations:
+        result = result.replace(source, target)
+    return result
 
 
 def chunk_text(text: str, limit: int = MAX_FEISHU_TEXT) -> list[str]:

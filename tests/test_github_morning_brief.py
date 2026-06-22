@@ -3,9 +3,13 @@ import unittest
 from src.github_morning_brief import (
     TrendingParser,
     chunk_text,
+    default_headers,
     extract_response_text,
+    format_signal,
+    infer_area,
     normalize_base_url,
     normalize_text,
+    RepoSignal,
 )
 
 
@@ -36,6 +40,28 @@ class GithubMorningBriefTest(unittest.TestCase):
 
     def test_normalize_base_url_strips_markdown_and_trailing_slash(self):
         self.assertEqual(normalize_base_url("[https://example.com](https://example.com/)"), "https://example.com")
+
+    def test_default_headers_do_not_attach_github_token(self):
+        headers = default_headers()
+        self.assertNotIn("Authorization", headers)
+
+    def test_format_signal_localizes_common_signals(self):
+        signal = "GitHub Trending daily; 12 stars today"
+        self.assertEqual(format_signal(signal), "GitHub 今日趋势; 12 今日新增星标")
+
+    def test_infer_area_detects_computational_history(self):
+        signal = RepoSignal(
+            full_name="owner/history-sim",
+            html_url="https://github.com/owner/history-sim",
+            description="historical event simulation",
+            language="Python",
+            stars=1,
+            forks=0,
+            updated_at="",
+            topics=(),
+            signal="GitHub search: cliodynamics",
+        )
+        self.assertEqual(infer_area(signal), "历史预测/计算历史")
 
     def test_chunk_text_keeps_short_text_as_one_chunk(self):
         self.assertEqual(chunk_text("hello", limit=10), ["hello"])
