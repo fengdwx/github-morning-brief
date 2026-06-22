@@ -1,0 +1,31 @@
+name: GitHub Morning Brief
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 08:30 Asia/Shanghai, Monday-Friday. GitHub cron is evaluated in UTC.
+    - cron: "30 0 * * 1-5"
+
+permissions:
+  contents: read
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Send GitHub morning brief to Feishu
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python src/github_morning_brief.py
