@@ -1,6 +1,12 @@
 import unittest
 
-from src.github_morning_brief import TrendingParser, chunk_text, extract_response_text, normalize_text
+from src.github_morning_brief import (
+    TrendingParser,
+    chunk_text,
+    extract_response_text,
+    normalize_base_url,
+    normalize_text,
+)
 
 
 class GithubMorningBriefTest(unittest.TestCase):
@@ -19,6 +25,17 @@ class GithubMorningBriefTest(unittest.TestCase):
             ]
         }
         self.assertEqual(extract_response_text(payload), "hello\nworld")
+
+    def test_extract_response_text_supports_anthropic_content_shape(self):
+        payload = {"content": [{"type": "text", "text": "hello"}, {"type": "text", "text": "world"}]}
+        self.assertEqual(extract_response_text(payload), "hello\nworld")
+
+    def test_extract_response_text_supports_openai_chat_shape(self):
+        payload = {"choices": [{"message": {"content": "hello"}}]}
+        self.assertEqual(extract_response_text(payload), "hello")
+
+    def test_normalize_base_url_strips_markdown_and_trailing_slash(self):
+        self.assertEqual(normalize_base_url("[https://example.com](https://example.com/)"), "https://example.com")
 
     def test_chunk_text_keeps_short_text_as_one_chunk(self):
         self.assertEqual(chunk_text("hello", limit=10), ["hello"])

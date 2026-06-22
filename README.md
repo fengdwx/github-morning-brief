@@ -27,15 +27,18 @@ GitHub Actions 会在北京时间工作日 08:30 自动运行：
 | 名称 | 必填 | 用途 |
 | --- | --- | --- |
 | `FEISHU_WEBHOOK_URL` | 是 | 飞书群机器人 webhook |
-| `OPENAI_API_KEY` | 否 | 用 OpenAI 生成更高质量中文简报 |
+| `ANTHROPIC_AUTH_TOKEN` | 推荐 | 用 Anthropic/Claude-compatible 接口生成更高质量中文简报 |
+| `ANTHROPIC_BASE_URL` | 推荐 | Anthropic/Claude-compatible 接口地址 |
+| `OPENAI_API_KEY` | 否 | Anthropic-compatible 不可用时的 OpenAI 备用生成接口 |
 
 可选变量：
 
 | 名称 | 默认值 | 用途 |
 | --- | --- | --- |
-| `OPENAI_MODEL` | `gpt-5.4-mini` | 生成简报使用的模型 |
+| `ANTHROPIC_MODEL` | `cc-deepseek-v4-pro` | Anthropic-compatible 生成模型 |
+| `OPENAI_MODEL` | `gpt-5.4-mini` | OpenAI 备用生成模型 |
 
-如果没有 `OPENAI_API_KEY`，脚本仍会发送一个基础版简报。
+脚本会优先使用 `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL`，失败后尝试 `OPENAI_API_KEY`，都不可用时仍会发送一个基础版简报。
 
 ## 本地测试
 
@@ -47,7 +50,9 @@ python3 src/github_morning_brief.py --dry-run
 
 ```bash
 FEISHU_WEBHOOK_URL="https://open.feishu.cn/open-apis/bot/v2/hook/..." \
-OPENAI_API_KEY="sk-..." \
+ANTHROPIC_AUTH_TOKEN="sk-..." \
+ANTHROPIC_BASE_URL="https://example.com" \
+ANTHROPIC_MODEL="cc-deepseek-v4-pro" \
 python3 src/github_morning_brief.py
 ```
 

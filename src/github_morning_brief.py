@@ -21,7 +21,7 @@ from html.parser import HTMLParser
 from typing import Any
 
 
-DEFAULT_MODEL = "gpt-5.4-mini"
+DEFAULT_MODEL = "cc-deepseek-v4-pro"
 GITHUB_API = "https://api.github.com"
 TRENDING_URL = "https://github.com/trending"
 MAX_FEISHU_TEXT = 3500
@@ -357,14 +357,10 @@ def build_source_digest(signals: list[RepoSignal]) -> str:
     return "\n".join(lines).strip()
 
 
-def generate_with_openai(signals: list[RepoSignal], model: str) -> str | None:
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        return None
-
+def build_generation_prompt(signals: list[RepoSignal]) -> str:
     today = dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).strftime("%Y-%m-%d")
     source_digest = build_source_digest(signals)
-    prompt = f"""
+    return f"""
 今天是 {today}。请基于下面的 GitHub 项目信号，生成一份中文晨间简报。
 
 要求：
@@ -379,6 +375,52 @@ def generate_with_openai(signals: list[RepoSignal], model: str) -> str | None:
 {source_digest}
 """.strip()
 
+
+def generate_with_anthropic(signals: list[RepoSignal], model: str) -> str | None:
+    api_key = os.getenv("ANTHROPIC_AUTH_TOKEN", "").strip()
+    base_url = normalize_base_url(os.getenv("ANTHROPIC_BASE_URL", ""))
+    if not api_key or not base_url:
+        return None
+
+    payload = {
+        "model": model,
+        "max_tokens": 3500,
+        "system": "你是一个给工程师和产品型创业者写晨间开源情报的研究助理。",
+        "messages": [{"role": "user", "content": build_generation_prompt(signals)}],
+    }
+    try:
+        response = post_json(
+            f"{base_url}/v1/messages",
+            payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "Accept": "application/json",
+            },
+            timeout=120,
+        )
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+        print(f"warning: Anthropic-compatible generation failed: {exc}", file=sys.stderr)
+        return None
+
+    text = extract_response_text(response)
+    return text.strip() if text else None
+
+
+def normalize_base_url(value: str) -> str:
+    text = value.strip()
+    markdown_match = re.fullmatch(r"\[[^\]]+\]\(([^)]+)\)", text)
+    if markdown_match:
+        text = markdown_match.group(1)
+    return text.rstrip("/")
+
+
+def generate_with_openai(signals: list[RepoSignal], model: str) -> str | None:
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return None
+
     payload = {
         "model": model,
         "input": [
@@ -386,7 +428,7 @@ def generate_with_openai(signals: list[RepoSignal], model: str) -> str | None:
                 "role": "system",
                 "content": "你是一个给工程师和产品型创业者写晨间开源情报的研究助理。",
             },
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": build_generation_prompt(signals)},
         ],
     }
     try:
@@ -407,6 +449,27 @@ def generate_with_openai(signals: list[RepoSignal], model: str) -> str | None:
 def extract_response_text(response: dict[str, Any]) -> str:
     if isinstance(response.get("output_text"), str):
         return response["output_text"]
+
+    content = response.get("content")
+    if isinstance(content, list):
+        return "\n".join(
+            str(item.get("text"))
+            for item in content
+            if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
+        )
+
+    choices = response.get("choices")
+    if isinstance(choices, list):
+        chunks: list[str] = []
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            message = choice.get("message")
+            if isinstance(message, dict) and isinstance(message.get("content"), str):
+                chunks.append(message["content"])
+        if chunks:
+            return "\n".join(chunks)
+
     chunks: list[str] = []
     for item in response.get("output", []) or []:
         for content in item.get("content", []) or []:
@@ -483,14 +546,14 @@ def build_brief(limit: int, per_query: int, model: str) -> str:
     signals = rank_signals(fetch_trending(limit=15) + search_repositories(per_query=per_query), limit=limit)
     if not signals:
         raise RuntimeError("No GitHub signals collected.")
-    return generate_with_openai(signals, model=model) or build_fallback_brief(signals)
+    return generate_with_anthropic(signals, model=model) or generate_with_openai(signals, model=model) or build_fallback_brief(signals)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate a GitHub morning brief and send it to Feishu.")
     parser.add_argument("--limit", type=int, default=int(os.getenv("BRIEF_REPO_LIMIT", "8")))
     parser.add_argument("--per-query", type=int, default=int(os.getenv("GITHUB_SEARCH_PER_QUERY", "3")))
-    parser.add_argument("--model", default=os.getenv("OPENAI_MODEL", DEFAULT_MODEL))
+    parser.add_argument("--model", default=os.getenv("ANTHROPIC_MODEL") or os.getenv("OPENAI_MODEL", DEFAULT_MODEL))
     parser.add_argument("--dry-run", action="store_true", help="Print the brief instead of sending it.")
     return parser.parse_args(argv)
 
