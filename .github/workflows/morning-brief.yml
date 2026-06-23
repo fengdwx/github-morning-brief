@@ -3,8 +3,8 @@ name: GitHub Morning Brief
 on:
   workflow_dispatch:
   schedule:
-    # 08:30 Asia/Shanghai, Monday-Friday. GitHub cron is evaluated in UTC.
-    - cron: "30 0 * * 1-5"
+    # 08:30 Asia/Shanghai, every day. GitHub cron is evaluated in UTC.
+    - cron: "30 0 * * *"
 
 permissions:
   contents: read

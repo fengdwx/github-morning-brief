@@ -1,6 +1,6 @@
 # GitHub Morning Brief
 
-每天工作日早上生成一份中文 GitHub 开源项目晨间简报，并推送到飞书群机器人。
+每天早上生成一份中文 GitHub 开源项目晨间简报，并推送到飞书群机器人。
 
 ## 关注方向
 
@@ -10,10 +10,10 @@
 
 ## 运行方式
 
-GitHub Actions 会在北京时间工作日 08:30 自动运行：
+GitHub Actions 会在北京时间每天 08:30 自动运行：
 
 ```yaml
-30 0 * * 1-5
+30 0 * * *
 ```
 
 这个 cron 是 UTC 时间，对应 Asia/Shanghai 的 08:30。
