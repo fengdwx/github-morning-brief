@@ -367,16 +367,18 @@ def build_generation_prompt(signals: list[RepoSignal]) -> str:
     today = dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).strftime("%Y-%m-%d")
     source_digest = build_source_digest(signals)
     return f"""
-今天是 {today}。请基于下面的 GitHub 项目信号，生成一份中文晨间简报。
+今天是 {today}。请基于下面的 GitHub 项目信号，生成一份中文晨间开源雷达。
 
 要求：
 - 筛选 5-8 个项目，不要泛泛而谈。
 - 每个项目包含：项目名和链接、领域、趋势信号、一句话介绍、为什么值得关注、适合我的可能用途。
+- 每个项目额外给出简短判断：成熟度（玩具项目/可试用/生产可用/需观察）、适合人群、优先级（高/中/低）、风险或噪音、今天最值得点开的文件/页面。
+- “为什么值得关注”和“适合我的可能用途”要结合我的兴趣做判断，不要只复述 README。
 - 除项目名、链接、代码库名、模型名、编程语言名和必要专有名词外，所有自然语言都必须使用中文；不要直接复制英文 description，请翻译、归纳或解释成中文。
 - 优先关注 AI/LLM、Agent、开发者工具、自动化、生产力、开源基础设施、工程实践、产品设计。
 - 固定观察一条冷门方向：历史预测/计算历史/社会复杂系统/事件预测，包括 cliodynamics、computational history、quantitative history、structural-demographic theory、geopolitical forecasting、prediction markets、temporal reasoning、历史数据库和历史事件模拟。这个方向不需要硬凑，但发现相关项目要单独提示。
-- 末尾给 1-3 条“今天可以深入看”的推荐，并说明理由。
-- 输出适合直接发到飞书群，信息密度高，控制在 2800 中文字以内。
+- 末尾给 1-3 条“今天可以深入看”的推荐，并给出明确行动建议，例如先看 README、examples、docs、demo、release、issues 或核心源码入口。
+- 输出适合直接发到飞书群，信息密度高，控制在 3600 中文字以内。
 
 项目信号：
 {source_digest}
@@ -518,6 +520,10 @@ def build_fallback_brief(signals: list[RepoSignal]) -> str:
                 f"领域：{area}",
                 f"信号：{format_signal(signal.signal)}{stars}{language}",
                 f"简介：这是一个偏 {area} 的项目，今天被算法筛到候选列表；建议点进仓库看 README、示例和最近提交质量。",
+                "成熟度：需观察",
+                "优先级：中",
+                "风险/噪音：未经过模型深度分析，可能只是搜索或趋势信号命中。",
+                "今天先看：README、examples/docs、最近 release 和 issue 活跃度。",
                 f"可能用途：{suggest_use(area)}",
                 "",
             ]
