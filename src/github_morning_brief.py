@@ -371,9 +371,16 @@ def build_generation_prompt(signals: list[RepoSignal]) -> str:
 
 要求：
 - 筛选 5-8 个项目，不要泛泛而谈。
-- 每个项目包含：项目名和链接、领域、趋势信号、一句话介绍、为什么值得关注、适合我的可能用途。
-- 每个项目额外给出简短判断：成熟度（玩具项目/可试用/生产可用/需观察）、适合人群、优先级（高/中/低）、风险或噪音、今天最值得点开的文件/页面。
-- “为什么值得关注”和“适合我的可能用途”要结合我的兴趣做判断，不要只复述 README。
+- 每个项目都必须先讲清楚“这个项目到底是干什么的”，不要先堆趋势、star 或抽象领域词。
+- 每个项目按固定结构输出：
+  1. 项目名和链接
+  2. 它是干什么的：用一句白话解释，避免只翻译 description。
+  3. 解决什么问题：说明用户原来有什么痛点，它怎么解决。
+  4. 怎么用/典型场景：给 1-2 个具体使用方式，最好能说清楚输入是什么、输出是什么。
+  5. 关键能力：列 2-4 个最核心功能。
+  6. 趋势信号：说明为什么今天被选中，例如 Trending、star、近期更新、搜索命中。
+  7. 值不值得看：成熟度（玩具项目/可试用/生产可用/需观察）、适合人群、优先级（高/中/低）、风险或噪音、今天最值得点开的文件/页面。
+- “解决什么问题”“怎么用/典型场景”和“值不值得看”要结合我的兴趣做判断，不要只复述 README。
 - 除项目名、链接、代码库名、模型名、编程语言名和必要专有名词外，所有自然语言都必须使用中文；不要直接复制英文 description，请翻译、归纳或解释成中文。
 - 优先关注 AI/LLM、Agent、开发者工具、自动化、生产力、开源基础设施、工程实践、产品设计。
 - 固定观察一条冷门方向：历史预测/计算历史/社会复杂系统/事件预测，包括 cliodynamics、computational history、quantitative history、structural-demographic theory、geopolitical forecasting、prediction markets、temporal reasoning、历史数据库和历史事件模拟。这个方向不需要硬凑，但发现相关项目要单独提示。
@@ -394,7 +401,7 @@ def generate_with_anthropic(signals: list[RepoSignal], model: str) -> str | None
 
     payload = {
         "model": model,
-        "max_tokens": 3500,
+        "max_tokens": 4200,
         "system": "你是一个给工程师和产品型创业者写晨间开源情报的研究助理。",
         "messages": [{"role": "user", "content": build_generation_prompt(signals)}],
     }
@@ -517,9 +524,11 @@ def build_fallback_brief(signals: list[RepoSignal]) -> str:
             [
                 f"{index}. {signal.full_name}",
                 signal.html_url,
-                f"领域：{area}",
-                f"信号：{format_signal(signal.signal)}{stars}{language}",
-                f"简介：这是一个偏 {area} 的项目，今天被算法筛到候选列表；建议点进仓库看 README、示例和最近提交质量。",
+                f"它是干什么的：这是一个偏 {area} 的开源项目，当前只能从仓库元数据初步判断用途。",
+                "解决什么问题：可能在对应领域提供工具、框架、示例或研究材料，需要点进仓库确认真实使用方式。",
+                "怎么用/典型场景：先看 README 和 examples，确认输入、输出、安装方式和 demo 是否完整。",
+                f"关键能力：{area} 相关能力；开源代码；近期更新或趋势信号。",
+                f"趋势信号：{format_signal(signal.signal)}{stars}{language}",
                 "成熟度：需观察",
                 "优先级：中",
                 "风险/噪音：未经过模型深度分析，可能只是搜索或趋势信号命中。",
