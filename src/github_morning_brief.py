@@ -407,7 +407,7 @@ def generate_with_anthropic(signals: list[RepoSignal], model: str) -> str | None
     }
 
     response = None
-    last_error: BaseException | None = None
+    last_error_message = ""
     for headers in anthropic_headers(auth_token=auth_token, api_key=api_key):
         try:
             response = post_json(
@@ -418,11 +418,11 @@ def generate_with_anthropic(signals: list[RepoSignal], model: str) -> str | None
             )
             break
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
-            last_error = exc
+            last_error_message = describe_error(exc)
             continue
 
     if response is None:
-        print(f"warning: Anthropic-compatible generation failed: {last_error}", file=sys.stderr)
+        print(f"warning: Anthropic-compatible generation failed: {last_error_message}", file=sys.stderr)
         return None
 
     text = extract_response_text(response)
@@ -511,6 +511,20 @@ def extract_response_text(response: dict[str, Any]) -> str:
             if content.get("type") in {"output_text", "text"} and isinstance(content.get("text"), str):
                 chunks.append(content["text"])
     return "\n".join(chunks)
+
+
+def describe_error(exc: BaseException) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        body = normalize_text(body)
+        if len(body) > 500:
+            body = f"{body[:500]}..."
+        suffix = f"; body: {body}" if body else ""
+        return f"HTTP {exc.code} {exc.reason}{suffix}"
+    return str(exc)
 
 
 def build_fallback_brief(signals: list[RepoSignal]) -> str:
@@ -655,7 +669,12 @@ def build_brief(limit: int, per_query: int, model: str) -> str:
     signals = rank_signals(fetch_trending(limit=15) + search_repositories(per_query=per_query), limit=limit)
     if not signals:
         raise RuntimeError("No GitHub signals collected.")
-    return generate_with_anthropic(signals, model=model) or generate_with_openai(signals, model=model) or build_fallback_brief(signals)
+    brief = generate_with_anthropic(signals, model=model) or generate_with_openai(signals, model=model)
+    if brief:
+        return brief
+    if os.getenv("ALLOW_FALLBACK_BRIEF", "").strip().lower() in {"1", "true", "yes"}:
+        return build_fallback_brief(signals)
+    raise RuntimeError("AI generation failed. Refusing to send low-quality metadata-only fallback brief.")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:

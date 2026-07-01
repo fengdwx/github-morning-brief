@@ -1,8 +1,10 @@
 import unittest
+from unittest.mock import patch
 
 from src.github_morning_brief import (
     TrendingParser,
     anthropic_headers,
+    build_brief,
     chunk_text,
     default_headers,
     extract_response_text,
@@ -92,6 +94,51 @@ class GithubMorningBriefTest(unittest.TestCase):
         self.assertEqual(parser.repos[0]["html_url"], "https://github.com/owner/repo")
         self.assertEqual(parser.repos[0]["description"], "A useful thing")
         self.assertEqual(parser.repos[0]["language"], "Python")
+
+    def test_build_brief_refuses_metadata_only_fallback_by_default(self):
+        signal = RepoSignal(
+            full_name="owner/repo",
+            html_url="https://github.com/owner/repo",
+            description="A useful thing",
+            language="Python",
+            stars=12,
+            forks=1,
+            updated_at="",
+            topics=(),
+            signal="GitHub search: topic:llm",
+        )
+        with (
+            patch("src.github_morning_brief.fetch_trending", return_value=[]),
+            patch("src.github_morning_brief.search_repositories", return_value=[signal]),
+            patch("src.github_morning_brief.generate_with_anthropic", return_value=None),
+            patch("src.github_morning_brief.generate_with_openai", return_value=None),
+            patch.dict("os.environ", {}, clear=True),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Refusing to send low-quality"):
+                build_brief(limit=1, per_query=1, model="test-model")
+
+    def test_build_brief_allows_metadata_fallback_when_explicitly_enabled(self):
+        signal = RepoSignal(
+            full_name="owner/repo",
+            html_url="https://github.com/owner/repo",
+            description="A useful thing",
+            language="Python",
+            stars=12,
+            forks=1,
+            updated_at="",
+            topics=(),
+            signal="GitHub search: topic:llm",
+        )
+        with (
+            patch("src.github_morning_brief.fetch_trending", return_value=[]),
+            patch("src.github_morning_brief.search_repositories", return_value=[signal]),
+            patch("src.github_morning_brief.generate_with_anthropic", return_value=None),
+            patch("src.github_morning_brief.generate_with_openai", return_value=None),
+            patch.dict("os.environ", {"ALLOW_FALLBACK_BRIEF": "true"}, clear=True),
+        ):
+            brief = build_brief(limit=1, per_query=1, model="test-model")
+        self.assertIn("owner/repo", brief)
+        self.assertIn("当前只能从仓库元数据初步判断用途", brief)
 
 
 if __name__ == "__main__":

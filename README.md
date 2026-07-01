@@ -37,13 +37,20 @@ GitHub Actions 会在北京时间每天 08:30 自动运行：
 | --- | --- | --- |
 | `ANTHROPIC_MODEL` | `cc-deepseek-v4-pro` | Anthropic-compatible 生成模型 |
 | `OPENAI_MODEL` | `gpt-5.4-mini` | OpenAI 备用生成模型 |
+| `ALLOW_FALLBACK_BRIEF` | 空 | 设为 `true` 时，AI 生成失败才允许发送基础元数据版简报 |
 
-脚本会优先使用 `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL`，失败后尝试 `OPENAI_API_KEY`，都不可用时仍会发送一个基础版简报。
+脚本会优先使用 `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL`，失败后尝试 `OPENAI_API_KEY`。默认情况下，AI 生成失败会直接中止，避免发送低质量的元数据版简报。
 
 ## 本地测试
 
 ```bash
 python3 src/github_morning_brief.py --dry-run
+```
+
+如果只是想在没有模型密钥时检查数据抓取链路，可以显式启用基础版 fallback：
+
+```bash
+ALLOW_FALLBACK_BRIEF=true python3 src/github_morning_brief.py --dry-run
 ```
 
 发送到飞书：
